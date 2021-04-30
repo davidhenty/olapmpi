@@ -64,7 +64,7 @@ subroutine haloirecvisendwaitall(sendbuf, recvbuf, n, neighbour, cartcomm)
 
 end subroutine haloirecvisendwaitall
 
-subroutine olapirecvisendwaitall(calcrep, sendbuf, recvbuf, n, &
+subroutine olapirecvisendwaitall(x, calcrep, sendbuf, recvbuf, n, &
                                  neighbour, cartcomm)
 
   integer :: calcrep, n, cartcomm
@@ -108,8 +108,6 @@ subroutine olapirecvisendwaitall(calcrep, sendbuf, recvbuf, n, &
      end do
   end do
 
-  x = 1.0
-
   call dummycalc(x, calcrep)
 
   call MPI_Waitall(ndir*ndim*nrequest, requests, &
@@ -118,7 +116,7 @@ subroutine olapirecvisendwaitall(calcrep, sendbuf, recvbuf, n, &
 
 end subroutine olapirecvisendwaitall
 
-subroutine nolapirecvisendwaitall(calcrep, sendbuf, recvbuf, n, &
+subroutine nolapirecvisendwaitall(x, calcrep, sendbuf, recvbuf, n, &
                                   neighbour, cartcomm)
 
   integer :: calcrep, n, cartcomm
@@ -164,8 +162,6 @@ subroutine nolapirecvisendwaitall(calcrep, sendbuf, recvbuf, n, &
 
   call MPI_Waitall(ndir*ndim*nrequest, requests, &
                    statuses, ierr)
-
-  x = 1.0
 
   call dummycalc(x, calcrep)
 
@@ -286,4 +282,33 @@ subroutine inithalodata(rank, sendbuf, recvbuf, nbuf)
 
 end subroutine inithalodata
 
+subroutine printhaloerr(allflag)
+
+  logical, dimension(:,:,:), allocatable :: allflag
+
+  integer :: idir, idim
+  
+  if (any(allflag(:,:,:) .eqv. .false.)) then
+
+     write(*,*)
+     write(*,*) "ERROR: halo data did not verify"
+     write(*,*)
+              
+     do idir = 1, ndir
+        do idim = 1, ndim
+
+           if (any(allflag(idir, idim,:) .eqv. .false.)) then
+              write(*,*) count(.not. allflag(idir, idim, :)), &
+                   " processes failed for idir, idim = ", &
+                   idir, ", ", idim
+           end if
+
+        end do
+     end do
+  end if
+  
+  write(*,*)
+
+end subroutine printhaloerr
+           
 end module olapcomms

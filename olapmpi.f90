@@ -7,15 +7,11 @@ program olapmpi
 
   implicit none
 
-  integer, parameter :: nhalotest = 8
-  integer :: ihalotest
-  logical :: halocalled
-  
   !
   ! Set main paramemers: size of each halo and number of repetitions
   !
 
-  integer, parameter :: nbuf = 10000
+  integer, parameter :: nbuf = 10000000
 
   integer :: irep, commrep, calcrep
   
@@ -80,8 +76,6 @@ program olapmpi
 
   call commdata(cartcomm, dims, periods, size, rank, coords, neighbour)
   
-  call inithalodata(rank, sendbuf, recvbuf, nbuf)
-
   ! estimate bwidth (GiB/s) and latency (us)
 
   bwidth  = 10.0
@@ -89,7 +83,7 @@ program olapmpi
 
   ! estimate time for one call of calculation which is 100 sqrts (us)
 
-  dummycalctime = 10.0
+  dummycalctime = 1.0
 
   ! Set target time
 
@@ -109,6 +103,8 @@ program olapmpi
 
      finished = .true.
 
+     call inithalodata(rank, sendbuf, recvbuf, nbuf)
+
      call MPI_Barrier(comm, ierr)
      t0 = benchtime()
 
@@ -123,6 +119,12 @@ program olapmpi
 
      commtime = t1 - t0
 
+     call checkrecvdata(flag, recvbuf, nbuf, cartcomm)
+     call MPI_Gather(flag,    ndir*ndim, MPI_LOGICAL, &
+                     allflag, ndir*ndim, MPI_LOGICAL, &
+                     0, comm, ierr)
+     if (rank == 0) call printhaloerr(allflag)
+     
      ! Make sure all ranks have the same time so bcast from 0
 
      call MPI_Bcast(commtime, 1, MPI_DOUBLE_PRECISION, 0, cartcomm, ierr)
@@ -182,6 +184,10 @@ program olapmpi
      end if
 
   end do
+
+  ! Do something with calcval to stop it being optimised away
+  if (calcval < 0) write(*,*) "calcval = ", calcval
+
   
   iorate = dble(commrep)*mibdata/time
 
@@ -198,6 +204,8 @@ program olapmpi
      write(*,*) "Normalised calcrep = ", calcrep
   end if
 
+  call inithalodata(rank, sendbuf, recvbuf, nbuf)
+
   call MPI_Barrier(comm, ierr)
   t0 = benchtime()
 
@@ -212,16 +220,27 @@ program olapmpi
 
   commtime = t1 - t0
 
+  call checkrecvdata(flag, recvbuf, nbuf, cartcomm)
+  call MPI_Gather(flag,    ndir*ndim, MPI_LOGICAL, &
+                  allflag, ndir*ndim, MPI_LOGICAL, &
+                  0, comm, ierr)
+  if (rank == 0) call printhaloerr(allflag)
+
   if (rank == 0) then
      write(*,*) "commtime = ", commtime
      write(*,*) "Estimated nolaptime = ", commtime + calctime
   end if
+
+  calcval = 1.0
+
+  call inithalodata(rank, sendbuf, recvbuf, nbuf)
+
   call MPI_Barrier(comm, ierr)
   t0 = benchtime()
 
   do irep = 1, commrep
 
-     call nolapirecvisendwaitall(calcrep, sendbuf, recvbuf, nbuf, &
+     call nolapirecvisendwaitall(calcval, calcrep, sendbuf, recvbuf, nbuf, &
                                  neighbour, cartcomm)
 
   end do
@@ -231,16 +250,29 @@ program olapmpi
 
   nolaptime = t1 - t0
 
+  call checkrecvdata(flag, recvbuf, nbuf, cartcomm)
+  call MPI_Gather(flag,    ndir*ndim, MPI_LOGICAL, &
+                  allflag, ndir*ndim, MPI_LOGICAL, &
+                  0, comm, ierr)
+  if (rank == 0) call printhaloerr(allflag)
+  
+  ! Do something with calcval to stop it being optimised away
+  if (calcval < 0) write(*,*) "calcval = ", calcval
+
   if (rank == 0) then
      write(*,*) "Measured  nolaptime = ", nolaptime
   end if
+
+  calcval = 1.0
+
+  call inithalodata(rank, sendbuf, recvbuf, nbuf)
 
   call MPI_Barrier(comm, ierr)
   t0 = benchtime()
 
   do irep = 1, commrep
 
-     call olapirecvisendwaitall(calcrep, sendbuf, recvbuf, nbuf, &
+     call olapirecvisendwaitall(calcval, calcrep, sendbuf, recvbuf, nbuf, &
                                 neighbour, cartcomm)
 
   end do
@@ -250,41 +282,19 @@ program olapmpi
 
   olaptime = t1 - t0
 
+  call checkrecvdata(flag, recvbuf, nbuf, cartcomm)
+  call MPI_Gather(flag,    ndir*ndim, MPI_LOGICAL, &
+                  allflag, ndir*ndim, MPI_LOGICAL, &
+                  0, comm, ierr)
+  if (rank == 0) call printhaloerr(allflag)
+
+  ! Do something with calcval to stop it being optimised away
+  if (calcval < 0) write(*,*) "calcval = ", calcval
+
   if (rank == 0) then
      write(*,*) "Measured   olaptime = ", olaptime
   end if
 
-  call checkrecvdata(flag, recvbuf, nbuf, cartcomm)
-        
-  call MPI_Gather(flag,    ndir*ndim, MPI_LOGICAL, &
-                  allflag, ndir*ndim, MPI_LOGICAL, &
-                  0, comm, ierr)
-
-  if (rank == 0) then
-           
-     if (any(allflag(:,:,:) .eqv. .false.)) then
-
-        write(*,*)
-        write(*,*) "ERROR: halo data did not verify"
-        write(*,*)
-              
-        do idir = 1, ndir
-           do idim = 1, ndim
-
-              if (any(allflag(idir, idim,:) .eqv. .false.)) then
-                 write(*,*) count(.not. allflag(idir, idim, :)), &
-                      " processes failed for idir, idim = ", &
-                      idir, ", ", idim
-              end if
-
-           end do
-        end do
-     end if
-
-     write(*,*)
-           
-  end if
-           
   if (rank == 0) then
      write(*,*) "Finished"
      write(*,*) "--------"
