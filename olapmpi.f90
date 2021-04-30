@@ -15,16 +15,19 @@ program olapmpi
   !
 
   integer, parameter :: nbuf = 10000
-  integer, parameter :: nrep = 10000
 
+  integer :: irep, commrep, calcrep
+  
   double precision, dimension(nbuf, ndir, ndim) :: sendbuf, recvbuf
 
   integer :: rank, size, comm, cartcomm, dblesize
-  integer, dimension(ndim) :: dims
+
+  integer, dimension(ndir, ndim) :: neighbour
+  integer, dimension(ndim) :: coords, dims
 
   integer, parameter :: mib = 1024*1024
 
-  logical :: reorder = .false.
+  logical :: finished, reorder = .false.
 
   logical, dimension(:,:),   allocatable :: flag
   logical, dimension(:,:,:), allocatable :: allflag
@@ -36,23 +39,7 @@ program olapmpi
   logical, dimension(ndim) :: periods = [.true., .true., .true.]
 
   double precision :: t0, t1, time, iorate, mibdata
-
-  integer :: ichar
-  integer, parameter :: maxstring = 64
-  character*(maxstring) :: halotest(nhalotest), divstring
-
-  halotest(1) = "Sendrecv"
-  halotest(2) = "Redblack"
-  halotest(3) = "Isend / Recv / Wait"
-  halotest(4) = "Irecv / Send / Wait"
-  halotest(5) = "Irecv / Isend / Wait (pairwise)"
-  halotest(6) = "Irecv / Isend / Waitall"
-  halotest(7) = "Persistent / Startall / Waitall"
-  halotest(8) = "Neighbourhood Collective"
-
-  do ichar = 1, maxstring
-     divstring(ichar:ichar) = "-"
-  end do
+  double precision :: bwidth, latency, timetarget, msgtime, commtime, calctime
 
   call MPI_Init(ierr)
 
@@ -86,21 +73,116 @@ program olapmpi
 
   call MPI_Cart_create(comm, ndim, dims, periods, reorder, cartcomm, ierr)
 
+  ! Get all the data
+
+  call commdata(cartcomm, dims, periods, size, rank, coords, neighbour)
+  
   call inithalodata(rank, sendbuf, recvbuf, nbuf)
 
-  call MPI_Barrier(comm, ierr)
-  t0 = benchtime()
+  ! estimate bwidth (GiB/s) and latency (us)
 
-  call haloirecvisendwaitall(nrep, sendbuf, recvbuf, nbuf, cartcomm)
+  bwidth  = 1.0
+  latency = 2.0
 
-  call MPI_Barrier(comm, ierr)
-  t1 = benchtime()
+  ! estimate time for one call of the calculation (us)
 
-  time = t1 - t0
-  iorate = dble(nrep)*mibdata/time
+  calctime = 1.0
+
+  ! Set target time
+
+  timetarget = 1.0
+
+  ! estimate commrep
+
+  msgtime = ndir*ndim*(latency*1.0d-6 + 1.0d-9*dble(nbuf*dblesize)/bwidth)
+  commrep = timetarget/msgtime
+  
+
+  if (rank == 0) write(*,*) "msgtime = ", msgtime, ", commrep = ", commrep
+
+  finished = .false.
+
+  do while (.not. finished .and. commrep > 1)
+
+     finished = .true.
+
+     call MPI_Barrier(comm, ierr)
+     t0 = benchtime()
+
+     do irep = 1, commrep
+
+        call haloirecvisendwaitall(sendbuf, recvbuf, nbuf, neighbour, cartcomm)
+
+     end do
+
+     call MPI_Barrier(comm, ierr)
+     t1 = benchtime()
+
+     commtime = t1 - t0
+
+     ! Make sure all ranks have the same time so bcast from 0
+
+     call MPI_Bcast(commtime, 1, MPI_DOUBLE_PRECISION, 0, cartcomm, ierr)
+
+     if (rank == 0) then
+        write(*,*) "commrep = ", commrep, ", secs = ", commtime
+     end if
+
+     if (time > 2.0*timetarget) then
+        commrep = commrep/2
+        finished = .false.
+     end if
+
+     if (time < 0.5*timetarget) then
+        commrep = commrep*2
+        finished = .false.
+     end if
+
+  end do
+  
+  ! estimate calcrep
+
+  calcrep = time/(1.0d6*calctime)
+
+  finished = .false.
+
+  do while (.not. finished .and. calcrep > 1)
+
+     finished = .true.
+
+     t0 = benchtime()
+
+     call dummycalc(calcrep)
+
+     t1 = benchtime()
+
+     calctime = t1 - t0
+
+     ! Make sure all ranks have the same time so bcast from 0
+
+     call MPI_Bcast(calctime, 1, MPI_DOUBLE_PRECISION, 0, cartcomm, ierr)
+
+     if (rank == 0) then
+        write(*,*) "calcrep = ", calcrep, ", secs = ", calctime
+     end if
+
+     if (time > 1.0*calctime) then
+        calcrep = calcrep/2
+        finished = .false.
+     end if
+
+     if (time < 0.4*calctime) then
+        calcrep = calcrep*2
+        finished = .false.
+     end if
+
+  end do
+  
+  iorate = dble(commrep)*mibdata/time
 
   if (rank == 0) then
-     write(*,*) "Secs = ", time, ", bwidth = ", iorate, " MiB/s"
+     write(*,*) "Final commrep = ", commrep, ", commtime = ", commtime
+     write(*,*) "Final calcrep = ", calcrep, ", calctime = ", calctime
   end if
 
   call checkrecvdata(flag, recvbuf, nbuf, cartcomm)
