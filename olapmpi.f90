@@ -42,6 +42,7 @@ program olapmpi
   double precision :: t0, t1, time, iorate, mibdata, calcval
   double precision :: bwidth, latency, timetarget
   double precision :: msgtime, dummycalctime, commtime, calctime
+  double precision :: olaptime, nolaptime
 
   call MPI_Init(ierr)
 
@@ -197,6 +198,62 @@ program olapmpi
      write(*,*) "Normalised calcrep = ", calcrep
   end if
 
+  call MPI_Barrier(comm, ierr)
+  t0 = benchtime()
+
+  do irep = 1, commrep
+
+     call haloirecvisendwaitall(sendbuf, recvbuf, nbuf, neighbour, cartcomm)
+
+  end do
+
+  call MPI_Barrier(comm, ierr)
+  t1 = benchtime()
+
+  commtime = t1 - t0
+
+  if (rank == 0) then
+     write(*,*) "commtime = ", commtime
+     write(*,*) "Estimated nolaptime = ", commtime + calctime
+  end if
+  call MPI_Barrier(comm, ierr)
+  t0 = benchtime()
+
+  do irep = 1, commrep
+
+     call nolapirecvisendwaitall(calcrep, sendbuf, recvbuf, nbuf, &
+                                 neighbour, cartcomm)
+
+  end do
+
+  call MPI_Barrier(comm, ierr)
+  t1 = benchtime()
+
+  nolaptime = t1 - t0
+
+  if (rank == 0) then
+     write(*,*) "Measured  nolaptime = ", nolaptime
+  end if
+
+  call MPI_Barrier(comm, ierr)
+  t0 = benchtime()
+
+  do irep = 1, commrep
+
+     call olapirecvisendwaitall(calcrep, sendbuf, recvbuf, nbuf, &
+                                neighbour, cartcomm)
+
+  end do
+
+  call MPI_Barrier(comm, ierr)
+  t1 = benchtime()
+
+  olaptime = t1 - t0
+
+  if (rank == 0) then
+     write(*,*) "Measured   olaptime = ", olaptime
+  end if
+
   call checkrecvdata(flag, recvbuf, nbuf, cartcomm)
         
   call MPI_Gather(flag,    ndir*ndim, MPI_LOGICAL, &
@@ -229,7 +286,6 @@ program olapmpi
   end if
            
   if (rank == 0) then
-     write(*,*)
      write(*,*) "Finished"
      write(*,*) "--------"
      write(*,*)
