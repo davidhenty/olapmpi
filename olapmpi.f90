@@ -86,9 +86,9 @@ program olapmpi
   bwidth  = 10.0
   latency = 1.0
 
-  ! estimate time for one call of the calculation (us)
+  ! estimate time for one call of calculation which is 100 sqrts (us)
 
-  dummycalctime = 1.0
+  dummycalctime = 10.0
 
   ! Set target time
 
@@ -187,6 +187,14 @@ program olapmpi
   if (rank == 0) then
      write(*,*) "Final commrep = ", commrep, ", commtime = ", commtime
      write(*,*) "Final calcrep = ", calcrep, ", calctime = ", calctime
+  end if
+
+  ! Normalise to a single comms call
+
+  calcrep = calcrep / commrep
+
+  if (rank == 0) then
+     write(*,*) "Normalised calcrep = ", calcrep
   end if
 
   call checkrecvdata(flag, recvbuf, nbuf, cartcomm)

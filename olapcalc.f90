@@ -10,7 +10,7 @@ subroutine dummycalc(x, nrep)
   double precision :: x
 
   do irep = 1, nrep
-     do i = 1, 1000
+     do i = 1, 100
         x = sqrt(x)
      end do
   end do

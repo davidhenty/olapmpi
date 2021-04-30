@@ -1,6 +1,7 @@
 module olapcomms
 
   use olapparams
+  use olapcalc
   
   implicit none
 
@@ -63,6 +64,112 @@ subroutine haloirecvisendwaitall(sendbuf, recvbuf, n, neighbour, cartcomm)
 
 end subroutine haloirecvisendwaitall
 
+subroutine olapirecvisendwaitall(calcrep, sendbuf, recvbuf, n, &
+                                 neighbour, cartcomm)
+
+  integer :: calcrep, n, cartcomm
+  double precision, dimension(n, ndir, ndim) :: sendbuf, recvbuf
+  integer, dimension(ndir, ndim) :: neighbour
+  
+  integer :: irep, idim, idir, irequest, reqid
+
+  integer, dimension(MPI_STATUS_SIZE, ndir*ndim*nrequest) :: statuses
+  integer, dimension(ndir*ndim*nrequest) :: requests
+
+  double precision :: x
+
+  ! Halo swap
+  
+  reqid = 0
+
+  do irequest = 1, nrequest
+     do idim = 1, ndim
+        do idir = 1, ndir
+
+           reqid = reqid + 1
+
+           if (irequest == rrequest) then
+
+              call MPI_Irecv(recvbuf(1,ndir-idir+1,idim), &
+                             n, MPI_DOUBLE_PRECISION, &
+                             neighbour(ndir-idir+1, idim), defrecvtag, &
+                             cartcomm, requests(reqid), ierr)
+
+           else
+
+              call MPI_Isend(sendbuf(1,idir,idim), &
+                             n, MPI_DOUBLE_PRECISION, &
+                             neighbour(idir, idim), defsendtag, &
+                             cartcomm, requests(reqid), ierr)
+
+           end if
+
+        end do
+     end do
+  end do
+
+  x = 1.0
+
+  call dummycalc(x, calcrep)
+
+  call MPI_Waitall(ndir*ndim*nrequest, requests, &
+                   statuses, ierr)
+
+
+end subroutine olapirecvisendwaitall
+
+subroutine nolapirecvisendwaitall(calcrep, sendbuf, recvbuf, n, &
+                                  neighbour, cartcomm)
+
+  integer :: calcrep, n, cartcomm
+  double precision, dimension(n, ndir, ndim) :: sendbuf, recvbuf
+  integer, dimension(ndir, ndim) :: neighbour
+  
+  integer :: irep, idim, idir, irequest, reqid
+
+  integer, dimension(MPI_STATUS_SIZE, ndir*ndim*nrequest) :: statuses
+  integer, dimension(ndir*ndim*nrequest) :: requests
+
+  double precision :: x
+
+  ! Halo swap
+  
+  reqid = 0
+
+  do irequest = 1, nrequest
+     do idim = 1, ndim
+        do idir = 1, ndir
+
+           reqid = reqid + 1
+
+           if (irequest == rrequest) then
+
+              call MPI_Irecv(recvbuf(1,ndir-idir+1,idim), &
+                             n, MPI_DOUBLE_PRECISION, &
+                             neighbour(ndir-idir+1, idim), defrecvtag, &
+                             cartcomm, requests(reqid), ierr)
+
+           else
+
+              call MPI_Isend(sendbuf(1,idir,idim), &
+                             n, MPI_DOUBLE_PRECISION, &
+                             neighbour(idir, idim), defsendtag, &
+                             cartcomm, requests(reqid), ierr)
+
+           end if
+
+        end do
+     end do
+  end do
+
+  call MPI_Waitall(ndir*ndim*nrequest, requests, &
+                   statuses, ierr)
+
+  x = 1.0
+
+  call dummycalc(x, calcrep)
+
+end subroutine nolapirecvisendwaitall
 
 subroutine commdata(cartcomm, dims, periods, size, rank, coords, neighbour)
 
