@@ -3,6 +3,7 @@ program olapmpi
   use olapparams
   use benchclock
   use olapcomms
+  use olapcalc
 
   implicit none
 
@@ -38,8 +39,9 @@ program olapmpi
 
   logical, dimension(ndim) :: periods = [.true., .true., .true.]
 
-  double precision :: t0, t1, time, iorate, mibdata
-  double precision :: bwidth, latency, timetarget, msgtime, commtime, calctime
+  double precision :: t0, t1, time, iorate, mibdata, calcval
+  double precision :: bwidth, latency, timetarget
+  double precision :: msgtime, dummycalctime, commtime, calctime
 
   call MPI_Init(ierr)
 
@@ -81,12 +83,12 @@ program olapmpi
 
   ! estimate bwidth (GiB/s) and latency (us)
 
-  bwidth  = 1.0
-  latency = 2.0
+  bwidth  = 10.0
+  latency = 1.0
 
   ! estimate time for one call of the calculation (us)
 
-  calctime = 1.0
+  dummycalctime = 1.0
 
   ! Set target time
 
@@ -128,12 +130,12 @@ program olapmpi
         write(*,*) "commrep = ", commrep, ", secs = ", commtime
      end if
 
-     if (time > 2.0*timetarget) then
+     if (commtime > 2.0*timetarget) then
         commrep = commrep/2
         finished = .false.
      end if
 
-     if (time < 0.5*timetarget) then
+     if (commtime < 0.5*timetarget) then
         commrep = commrep*2
         finished = .false.
      end if
@@ -142,7 +144,9 @@ program olapmpi
   
   ! estimate calcrep
 
-  calcrep = time/(1.0d6*calctime)
+  calcrep = 1.0d6*commtime/dummycalctime
+
+  calcval = 1.0
 
   finished = .false.
 
@@ -152,7 +156,7 @@ program olapmpi
 
      t0 = benchtime()
 
-     call dummycalc(calcrep)
+     call dummycalc(calcval, calcrep)
 
      t1 = benchtime()
 
@@ -166,12 +170,12 @@ program olapmpi
         write(*,*) "calcrep = ", calcrep, ", secs = ", calctime
      end if
 
-     if (time > 1.0*calctime) then
+     if (calctime > 1.0*commtime) then
         calcrep = calcrep/2
         finished = .false.
      end if
 
-     if (time < 0.4*calctime) then
+     if (calctime < 0.4*commtime) then
         calcrep = calcrep*2
         finished = .false.
      end if
