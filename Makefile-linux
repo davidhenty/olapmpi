@@ -11,6 +11,7 @@ EXE=	olapmpi
 SRC= \
 	olapmpi.f90 \
 	olapcomms.f90 \
+        olapcalc.f90 \
         olapparams.f90 \
         benchclock.f90
 
@@ -33,8 +34,8 @@ $(EXE):	$(OBJ)
 
 $(OBJ):	$(MF)
 
-olapmpi.o:	olapparams.o olapcomms.o benchclock.o
-olapcomms.o:	olapparams.o
+olapmpi.o:	olapparams.o olapcomms.o olapcalc.o benchclock.o
+olapcomms.o:	olapparams.o olapcalc.o
 
 clean:
-	rm -f $(OBJ) $(EXE) core *.mod *.MOD
+	rm -f $(OBJ) $(EXE) core *.mod *.MOD *~
